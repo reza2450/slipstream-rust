@@ -48,7 +48,12 @@ The following use `picoquic_internal.h` and therefore depend on picoquic interna
 - `cnx->flow_blocked` and `cnx->stream_blocked`
   - Wrapper: `slipstream_is_flow_blocked` in `crates/slipstream-ffi/cc/slipstream_poll.c`.
   - Why: With deferred consumption, the client needs to send poll queries only when flow/stream
-    blocked so MAX_DATA updates can arrive without spamming polls.
+    blocked so MAX_DATA updates can arrive without spamming polls. The Rust client also
+    suppresses extra polls when stream data is ready unless flow control is blocking.
+
+- `picoquic_find_ready_stream`
+  - Wrapper: `slipstream_has_ready_stream` in `crates/slipstream-ffi/cc/slipstream_poll.c`.
+  - Why: Avoid sending extra polls while QUIC has stream data queued to send.
 
 - `cnx->no_ack_delay`
   - Wrapper: `slipstream_disable_ack_delay` in `crates/slipstream-ffi/cc/slipstream_poll.c`.
@@ -64,6 +69,13 @@ The following use `picoquic_internal.h` and therefore depend on picoquic interna
   - Usage: `crates/slipstream-ffi/cc/slipstream_server_cc.c`.
   - Why: The server congestion algorithm is customized to effectively remove CC limits so
     DNS polling and application backpressure control throughput instead of packet-level CC.
+
+## Public picoquic APIs relied on by slipstream
+
+- `picoquic_get_pacing_rate`
+  - Wrapper: `get_pacing_rate` in `crates/slipstream-ffi/src/picoquic.rs`.
+  - Why: The authoritative client derives its DNS poll QPS budget from picoquic's pacing rate and
+    uses cwnd as a fallback when pacing is unavailable.
 
 ## Notes
 

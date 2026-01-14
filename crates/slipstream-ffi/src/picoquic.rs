@@ -31,6 +31,27 @@ pub struct picoquic_congestion_algorithm_t {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct picoquic_path_quality_t {
+    pub receive_rate_estimate: u64,
+    pub pacing_rate: u64,
+    pub cwin: u64,
+    pub rtt: u64,
+    pub rtt_sample: u64,
+    pub rtt_variant: u64,
+    pub rtt_min: u64,
+    pub rtt_max: u64,
+    pub sent: u64,
+    pub lost: u64,
+    pub timer_losses: u64,
+    pub spurious_losses: u64,
+    pub max_spurious_rtt: u64,
+    pub max_reorder_delay: u64,
+    pub max_reorder_gap: u64,
+    pub bytes_in_transit: u64,
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum picoquic_state_enum {
     picoquic_state_client_init = 0,
@@ -213,9 +234,17 @@ extern "C" {
         current_time: u64,
         delay_max: i64,
     ) -> i64;
+    pub fn picoquic_get_rtt(cnx: *mut picoquic_cnx_t) -> u64;
+    pub fn picoquic_get_cwin(cnx: *mut picoquic_cnx_t) -> u64;
+    pub fn picoquic_get_pacing_rate(cnx: *mut picoquic_cnx_t) -> u64;
+    pub fn picoquic_get_default_path_quality(
+        cnx: *mut picoquic_cnx_t,
+        quality: *mut picoquic_path_quality_t,
+    );
 
     pub fn slipstream_request_poll(cnx: *mut picoquic_cnx_t);
     pub fn slipstream_is_flow_blocked(cnx: *mut picoquic_cnx_t) -> c_int;
+    pub fn slipstream_has_ready_stream(cnx: *mut picoquic_cnx_t) -> c_int;
     pub fn slipstream_disable_ack_delay(cnx: *mut picoquic_cnx_t);
 
     pub fn picoquic_get_first_cnx(quic: *mut picoquic_quic_t) -> *mut picoquic_cnx_t;
@@ -319,4 +348,50 @@ extern "C" {
         local: c_int,
         addr: *mut sockaddr_storage,
     ) -> c_int;
+}
+
+/// # Safety
+/// `cnx` must be null or point to a valid picoquic connection for the duration
+/// of the call.
+pub unsafe fn get_cwin(cnx: *mut picoquic_cnx_t) -> u64 {
+    if cnx.is_null() {
+        0
+    } else {
+        picoquic_get_cwin(cnx)
+    }
+}
+
+/// # Safety
+/// `cnx` must be null or point to a valid picoquic connection for the duration
+/// of the call.
+pub unsafe fn get_rtt(cnx: *mut picoquic_cnx_t) -> u64 {
+    if cnx.is_null() {
+        0
+    } else {
+        picoquic_get_rtt(cnx)
+    }
+}
+
+/// # Safety
+/// `cnx` must be null or point to a valid picoquic connection for the duration
+/// of the call.
+pub unsafe fn get_pacing_rate(cnx: *mut picoquic_cnx_t) -> u64 {
+    if cnx.is_null() {
+        0
+    } else {
+        picoquic_get_pacing_rate(cnx)
+    }
+}
+
+/// # Safety
+/// `cnx` must be null or point to a valid picoquic connection for the duration
+/// of the call.
+pub unsafe fn get_bytes_in_transit(cnx: *mut picoquic_cnx_t) -> u64 {
+    if cnx.is_null() {
+        0
+    } else {
+        let mut quality = picoquic_path_quality_t::default();
+        picoquic_get_default_path_quality(cnx, &mut quality as *mut _);
+        quality.bytes_in_transit
+    }
 }

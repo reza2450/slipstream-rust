@@ -3,12 +3,16 @@ use slipstream_core::HostPort;
 pub mod picoquic;
 pub mod runtime;
 
+pub use picoquic::get_pacing_rate;
+pub use picoquic::get_rtt;
+
 #[derive(Debug)]
 pub struct ClientConfig<'a> {
     pub tcp_listen_port: u16,
     pub resolvers: &'a [HostPort],
     pub domain: &'a str,
     pub congestion_control: &'a str,
+    pub authoritative: bool,
     pub gso: bool,
     pub keep_alive_interval: usize,
     pub debug_poll: bool,
