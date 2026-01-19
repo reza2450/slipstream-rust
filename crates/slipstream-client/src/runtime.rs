@@ -17,6 +17,7 @@ use crate::pinning::configure_pinned_certificate;
 use crate::streams::{
     client_callback, drain_commands, drain_stream_data, handle_command, spawn_acceptor, ClientState,
 };
+use slipstream_core::net::is_transient_udp_error;
 use slipstream_dns::{build_qname, encode_query, QueryParams, CLASS_IN, RR_TXT};
 use slipstream_ffi::{
     configure_quic_with_custom,
@@ -261,15 +262,17 @@ pub async fn run_client(config: &ClientConfig<'_>) -> Result<i32, ClientError> {
                                 }
                                 Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
                                 Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
-                                Err(err) => return Err(map_io(err)),
+                                Err(err) => {
+                                    if is_transient_udp_error(&err) {
+                                        break;
+                                    }
+                                    return Err(map_io(err));
+                                }
                             }
                         }
                     }
                     Err(err) => {
-                        if err.kind() != std::io::ErrorKind::WouldBlock
-                            && err.kind() != std::io::ErrorKind::TimedOut
-                            && err.kind() != std::io::ErrorKind::Interrupted
-                        {
+                        if !is_transient_udp_error(&err) {
                             return Err(map_io(err));
                         }
                     }
@@ -360,7 +363,11 @@ pub async fn run_client(config: &ClientConfig<'_>) -> Result<i32, ClientError> {
             let dest = sockaddr_storage_to_socket_addr(&addr_to)?;
             let dest = normalize_dual_stack_addr(dest);
             local_addr_storage = addr_from;
-            udp.send_to(&packet, dest).await.map_err(map_io)?;
+            if let Err(err) = udp.send_to(&packet, dest).await {
+                if !is_transient_udp_error(&err) {
+                    return Err(map_io(err));
+                }
+            }
         }
 
         let has_ready_stream = unsafe { slipstream_has_ready_stream(cnx) != 0 };

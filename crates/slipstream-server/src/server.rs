@@ -1,4 +1,4 @@
-use slipstream_core::{resolve_host_port, HostPort};
+use slipstream_core::{net::is_transient_udp_error, resolve_host_port, HostPort};
 use slipstream_dns::{
     decode_query_with_domains, encode_response, DecodeQueryError, Question, Rcode, ResponseParams,
 };
@@ -217,35 +217,48 @@ pub async fn run_server(config: &ServerConfig) -> Result<i32, ServerError> {
                 }
             }
             recv = udp.recv_from(&mut recv_buf) => {
-                let (size, peer) = recv.map_err(map_io)?;
-                let loop_time = unsafe { picoquic_current_time() };
-                if let Some(slot) = decode_slot(
-                    &recv_buf[..size],
-                    peer,
-                    &domains,
-                    quic,
-                    loop_time,
-                    &local_addr_storage,
-                )? {
-                    slots.push(slot);
-                }
-                for _ in 1..PICOQUIC_PACKET_LOOP_RECV_MAX {
-                    match udp.try_recv_from(&mut recv_buf) {
-                        Ok((size, peer)) => {
-                            if let Some(slot) = decode_slot(
-                                &recv_buf[..size],
-                                peer,
-                                &domains,
-                                quic,
-                                loop_time,
-                                &local_addr_storage,
-                            )? {
-                                slots.push(slot);
+                match recv {
+                    Ok((size, peer)) => {
+                        let loop_time = unsafe { picoquic_current_time() };
+                        if let Some(slot) = decode_slot(
+                            &recv_buf[..size],
+                            peer,
+                            &domains,
+                            quic,
+                            loop_time,
+                            &local_addr_storage,
+                        )? {
+                            slots.push(slot);
+                        }
+                        for _ in 1..PICOQUIC_PACKET_LOOP_RECV_MAX {
+                            match udp.try_recv_from(&mut recv_buf) {
+                                Ok((size, peer)) => {
+                                    if let Some(slot) = decode_slot(
+                                        &recv_buf[..size],
+                                        peer,
+                                        &domains,
+                                        quic,
+                                        loop_time,
+                                        &local_addr_storage,
+                                    )? {
+                                        slots.push(slot);
+                                    }
+                                }
+                                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
+                                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+                                Err(err) => {
+                                    if is_transient_udp_error(&err) {
+                                        break;
+                                    }
+                                    return Err(map_io(err));
+                                }
                             }
                         }
-                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => break,
-                        Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
-                        Err(err) => return Err(map_io(err)),
+                    }
+                    Err(err) => {
+                        if !is_transient_udp_error(&err) {
+                            return Err(map_io(err));
+                        }
                     }
                 }
             }
@@ -305,7 +318,11 @@ pub async fn run_server(config: &ServerConfig) -> Result<i32, ServerError> {
             })
             .map_err(|err| ServerError::new(err.to_string()))?;
             let peer = normalize_dual_stack_addr(slot.peer);
-            udp.send_to(&response, peer).await.map_err(map_io)?;
+            if let Err(err) = udp.send_to(&response, peer).await {
+                if !is_transient_udp_error(&err) {
+                    return Err(map_io(err));
+                }
+            }
         }
     }
 

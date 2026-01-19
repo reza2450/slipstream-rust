@@ -1,6 +1,7 @@
 use std::fmt;
 
 mod macros;
+pub mod net;
 pub mod stream;
 pub mod tcp;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};

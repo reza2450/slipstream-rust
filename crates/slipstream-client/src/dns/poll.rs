@@ -1,4 +1,5 @@
 use crate::error::ClientError;
+use slipstream_core::net::is_transient_udp_error;
 use slipstream_dns::{build_qname, encode_query, QueryParams, CLASS_IN, RR_TXT};
 use slipstream_ffi::picoquic::{
     picoquic_cnx_t, picoquic_current_time, picoquic_prepare_packet_ex, slipstream_request_poll,
@@ -102,9 +103,14 @@ pub(crate) async fn send_poll_queries(
 
         let dest = sockaddr_storage_to_socket_addr(&addr_to)?;
         let dest = normalize_dual_stack_addr(dest);
-        udp.send_to(&packet, dest)
-            .await
-            .map_err(|err| ClientError::new(err.to_string()))?;
+        if let Err(err) = udp.send_to(&packet, dest).await {
+            if is_transient_udp_error(&err) {
+                remaining_count = remaining_count.saturating_add(1);
+                *remaining = remaining_count;
+                break;
+            }
+            return Err(ClientError::new(err.to_string()));
+        }
         if resolver.mode == ResolverMode::Authoritative {
             resolver.inflight_poll_ids.insert(poll_id, current_time);
         }
