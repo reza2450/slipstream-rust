@@ -5,7 +5,7 @@ use self::path::{
     apply_path_mode, drain_path_events, fetch_path_quality, find_resolver_by_addr_mut,
     loop_burst_total, path_poll_burst_max,
 };
-use self::setup::{bind_udp_socket, compute_mtu, map_io};
+use self::setup::{bind_tcp_listener, bind_udp_socket, compute_mtu, map_io};
 use crate::dns::{
     add_paths, expire_inflight_polls, handle_dns_response, maybe_report_debug,
     normalize_dual_stack_addr, refresh_resolver_path, resolve_resolvers, resolver_mode_to_c,
@@ -34,9 +34,9 @@ use slipstream_ffi::{
     socket_addr_to_storage, ClientConfig, QuicGuard, ResolverMode,
 };
 use std::ffi::CString;
+use std::net::Ipv6Addr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpListener as TokioTcpListener;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
@@ -46,6 +46,12 @@ const SLIPSTREAM_ALPN: &str = "picoquic_sample";
 const SLIPSTREAM_SNI: &str = "test.example.com";
 const DNS_WAKE_DELAY_MAX_US: i64 = 10_000_000;
 const DNS_POLL_SLICE_US: u64 = 50_000;
+
+fn is_ipv6_unspecified(host: &str) -> bool {
+    host.parse::<Ipv6Addr>()
+        .map(|addr| addr.is_unspecified())
+        .unwrap_or(false)
+}
 
 pub async fn run_client(config: &ClientConfig<'_>) -> Result<i32, ClientError> {
     let domain_len = config.domain.len();
@@ -61,11 +67,36 @@ pub async fn run_client(config: &ClientConfig<'_>) -> Result<i32, ClientError> {
     let (command_tx, mut command_rx) = mpsc::unbounded_channel();
     let data_notify = Arc::new(Notify::new());
     let debug_streams = config.debug_streams;
-    let listener = TokioTcpListener::bind(("0.0.0.0", config.tcp_listen_port))
-        .await
-        .map_err(map_io)?;
+    let tcp_host = config.tcp_listen_host;
+    let tcp_port = config.tcp_listen_port;
+    let mut bound_host = tcp_host.to_string();
+    let listener = match bind_tcp_listener(tcp_host, tcp_port).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            if is_ipv6_unspecified(tcp_host) {
+                warn!(
+                    "Failed to bind TCP listener on {}:{} ({}); falling back to 0.0.0.0",
+                    tcp_host, tcp_port, err
+                );
+                match bind_tcp_listener("0.0.0.0", tcp_port).await {
+                    Ok(listener) => {
+                        bound_host = "0.0.0.0".to_string();
+                        listener
+                    }
+                    Err(fallback_err) => {
+                        return Err(ClientError::new(format!(
+                            "Failed to bind TCP listener on {}:{} ({}) or 0.0.0.0:{} ({})",
+                            tcp_host, tcp_port, err, tcp_port, fallback_err
+                        )));
+                    }
+                }
+            } else {
+                return Err(err);
+            }
+        }
+    };
     spawn_acceptor(listener, command_tx.clone());
-    info!("Listening on TCP port {}", config.tcp_listen_port);
+    info!("Listening on TCP port {} (host {})", tcp_port, bound_host);
 
     let alpn = CString::new(SLIPSTREAM_ALPN)
         .map_err(|_| ClientError::new("ALPN contains an unexpected null byte"))?;

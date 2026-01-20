@@ -9,8 +9,11 @@ Required flags:
 - --domain <DOMAIN>
 - --resolver <IP:PORT> and/or --authoritative <IP:PORT> (repeatable; at least one total, order preserved)
 
+These can also be supplied via SIP003 environment variables; see docs/sip003.md.
+
 Common flags:
 
+- --tcp-listen-host <HOST> (default: ::)
 - --tcp-listen-port <PORT> (default: 5201)
 - --congestion-control <bbr|dcubic> (optional; overrides congestion control for all resolvers)
 - --cert <PATH> (optional; PEM-encoded server certificate for strict leaf pinning)
@@ -32,7 +35,7 @@ Notes:
 
 - Resolver addresses may be IPv4 or bracketed IPv6; mixed families are supported.
 - IPv6 resolvers must be bracketed, for example: [2001:db8::1]:53.
-- IPv4 resolvers require an IPv6 dual-stack UDP socket (e.g., IPV6_V6ONLY=0 via OS defaults or sysctl).
+- IPv4 resolvers require an IPv6 dual-stack UDP socket; slipstream attempts to set IPV6_V6ONLY=0, but some OSes may still require sysctl changes.
 - Provide --cert to enable strict leaf pinning; omit it for legacy/no-verification behavior.
 - The pinned certificate must match the server leaf exactly; CA bundles are not supported.
 - Resolver order follows the CLI; the first resolver becomes path 0.
@@ -52,11 +55,14 @@ Required flags:
 - --cert <PATH>
 - --key <PATH>
 
+These can also be supplied via SIP003 environment variables; see docs/sip003.md.
+
 Common flags:
 
+- --dns-listen-host <HOST> (default: ::)
 - --dns-listen-port <PORT> (default: 53)
 - --target-address <HOST:PORT> (default: 127.0.0.1:5201)
-- IPv4 DNS clients require an IPv6 dual-stack UDP socket (e.g., IPV6_V6ONLY=0 via OS defaults or sysctl).
+- When binding to ::, slipstream attempts to enable dual-stack (IPV6_V6ONLY=0); if your OS disallows it, IPv4 DNS clients require sysctl changes or binding to an IPv4 address.
 
 Example:
 
@@ -91,3 +97,7 @@ See docs/interop.md for full details and C interop variants.
 
 When multiple --domain values are provided, the server matches the longest
 suffix in incoming QNAMEs.
+
+## SIP003 plugin mode
+
+See docs/sip003.md for SIP003 environment variable support and option syntax.
