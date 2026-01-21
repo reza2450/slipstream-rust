@@ -1,13 +1,15 @@
-name: Fixed Build
+name: Final Fix Build
 on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      # قدم جدید: نصب ابزارهای حیاتی که باعث ارور شده بودند
-      - name: Install System Dependencies
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive  # <--- این خط کلید حل مشکل است
+
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config cmake build-essential
@@ -18,8 +20,10 @@ jobs:
       - name: Build Release
         run: cargo build --release
         
-      - name: Upload Artifact
+      - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: slipstream-client
-          path: target/release/slipstream-client
+          name: slipstream-binaries
+          path: |
+            target/release/slipstream-client
+            target/release/slipstream-server
