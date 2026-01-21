@@ -1,4 +1,4 @@
-name: Build Binary Correctly
+name: Fixed Build
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -6,13 +6,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          
+      # قدم جدید: نصب ابزارهای حیاتی که باعث ارور شده بودند
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config cmake build-essential
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Build Release
         run: cargo build --release
         
